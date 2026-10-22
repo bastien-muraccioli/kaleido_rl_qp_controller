@@ -1,132 +1,60 @@
 ---
-# If true, the FSM transitions are managed by an external tool
 Managed: false
-# If true and the FSM is self-managed, transitions should be triggered
 StepByStep: true
-# Change idle behaviour, if true the state is kept until transition,
-# otherwise the FSM holds the last state until transition
 IdleKeepState: false
-# Where to look for state libraries
+
 StatesLibraries:
-- "@MC_STATES_DEFAULT_RUNTIME_INSTALL_PREFIX@"
-- "@MC_STATES_RUNTIME_INSTALL_PREFIX@"
-# Where to look for state files
+  - "@MC_STATES_DEFAULT_RUNTIME_INSTALL_PREFIX@"
+  - "@MC_STATES_RUNTIME_INSTALL_PREFIX@"
 StatesFiles:
-- "@MC_STATES_DEFAULT_RUNTIME_INSTALL_PREFIX@/data"
-- "@MC_STATES_RUNTIME_INSTALL_PREFIX@/data"
-# If true, state factory will be more verbose
+  - "@MC_STATES_DEFAULT_RUNTIME_INSTALL_PREFIX@/data"
+  - "@MC_STATES_RUNTIME_INSTALL_PREFIX@/data"
 VerboseStateFactory: false
-# Additional robots to load
+
 robots:
   ground:
     module: env/ground
 
-# Collision constraint
-collisions:
-- type: collision
-  useMinimal: true
+robot:
+  # TODO(robot): adjust the body used by floating-base observations.
+  base_body: base_link
+  # realRobot is usually appropriate on hardware; robot can be useful in simulation.
+  observation_source: realRobot
 
+collisions:
+  - type: collision
+    useMinimal: true
+
+# Constraint examples. Keep only constraints supported by your robot and application.
+# constraints:
+#   - type: contact
+#     contactType: acceleration
+#   - type: compoundJoint
+
+# TODO(robot): adjust the ObserverPipeline
 ObserverPipelines:
-- name: Pipeline
+  name: MainPipeline
+  gui: true
+  log: true
   observers:
-    # Add an encoder observer to read joint velocities (Required for closed loop control)
     - type: Encoder
-      velocity: encoderVelocities
-      
-    # For humanoid robots, add an estimator to compute the floating base state (position, velocity and orientation of the robot in the world)
-    # BodySensor observer can be used in simulation, but on the real-robot, tilt observer must be used instead.
+      config:
+        velocity: encoderVelocities
+    # Example BodySensor observer:
     # - type: BodySensor
     #   update: true
     #   bodySensor: FloatingBase
+    # Example external torque observer (robo-specific adjustments needed):
+    # - type: ExternalForcesObserver
+    #   estimation_method: MomentumObserver
+    #   use_forces_from_ft_sensors: false
+    #   residual_gain: 100
+    #   torque_source_type: CommandedTorque
 
-    - type: ExternalForcesObserver
-      estimation_method: MomentumObserver   # or ForceSensorBased
-      # MomentumObserver-only keys:
-      residual_gain: 10.0              # observer gain K; higher = faster response, more noise
-      torque_source_type: CommandedTorque  # JointTorqueMeasurement preferred when available
-
-# Implement some additional text states
 states: {}
-# Transitions map
 transitions:
-- [NewRLQPController_Initial, OK, NewRLQPController_Initial, Strict]
-# Initial state
+  - [NewRLQPController_Initial, OK, NewRLQPController_Initial, Strict]
 init: NewRLQPController_Initial
 
-# RL policy configuration parameters
-policy_path: ["policyName1.onnx", "policyName2.onnx"]  # Path to the RL policy file(s) 
-default_policy_index: 0 # Index of the default policy to use
-policies:
-  # index 0 : policyName1
-  - use_QP: true
-    policy_step_size: 0.01 # Policy step size in seconds
-    physics_step_size: 0.001 # Physics step size in seconds
-    pd_gains_ratio: 1.0
-
-    action_scale:
-        joint_name1: gain value e.g 100.0
-        joint_name2: gain value e.g 100.0
-        ...
-        joint_nameN: gain value e.g 100.0
-    kp:
-        joint_name1: gain value e.g 100.0
-        joint_name2: gain value e.g 100.0
-        ...
-        joint_nameN: gain value e.g 100.0
-    kd:
-        joint_name1: gain value e.g 100.0
-        joint_name2: gain value e.g 100.0
-        ...
-        joint_nameN: gain value e.g 100.0
-
-    # q0 must respect the joint order used in the RL framework (for action_scale, kp and kd, the joint order does not matter)
-    q0:
-      joint_name1: joint pos value in rad e.g 0.0
-      joint_name2: joint pos value in rad e.g 0.0
-      ...
-      joint_nameN: joint pos value in rad e.g 0.0
-    
-    # The order of joints in action vector (policy output)
-    # Some RL policies may not control all the joints of the robot, in that case, only the controlled joints should be listed here.
-    ref_joint_order:
-      - joint_name1
-      - joint_name2
-      ...
-      - joint_nameN
-
-  # index 1 : policyName2
-  - use_QP: true
-    policy_step_size: 0.01 # Policy step size in seconds
-    physics_step_size: 0.001 # Physics step size in seconds
-    pd_gains_ratio: 1.0
-
-    action_scale:
-        joint_name1: gain value e.g 100.0
-        joint_name2: gain value e.g 100.0
-        ...
-        joint_nameN: gain value e.g 100.0
-    kp:
-        joint_name1: gain value e.g 100.0
-        joint_name2: gain value e.g 100.0
-        ...
-        joint_nameN: gain value e.g 100.0
-    kd:
-        joint_name1: gain value e.g 100.0
-        joint_name2: gain value e.g 100.0
-        ...
-        joint_nameN: gain value e.g 100.0
-
-    # q0 must respect the joint order used in the RL framework (for action_scale, kp and kd, the joint order does not matter)
-    q0:
-      joint_name1: joint pos value in rad e.g 0.0
-      joint_name2: joint pos value in rad e.g 0.0
-      ...
-      joint_nameN: joint pos value in rad e.g 0.0
-    
-    # The order of joints in action vector (policy output)
-    # Some RL policies may not control all the joints of the robot, in that case, only the controlled joints should be listed here.
-    ref_joint_order:
-      - joint_name1
-      - joint_name2
-      ...
-      - joint_nameN
+policies_root: "@CMAKE_CURRENT_SOURCE_DIR@/policies"
+default_policy: policyName1

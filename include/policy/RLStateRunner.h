@@ -1,0 +1,54 @@
+#pragma once
+#include <Eigen/Core>
+#include <mc_control/fsm/State.h>
+#include <string>
+
+/**
+ * @brief FSM state lifecycle helpers and observation builder for RL controllers.
+ *
+ * utils provides three FSM hooks (start / run / teardown) and the observation
+ * assembly function getCurrentObservation(). One utils instance lives inside
+ * NewRLQPController and is called from each FSM RL state.
+ *
+ * ## Usage in an FSM state
+ *
+ * @code
+ * // In MyState.cpp
+ * bool MyState::run(mc_control::fsm::Controller & ctl)
+ * {
+ *   auto & c = static_cast<NewRLQPController&>(ctl);
+ *   c.rlStateRunner.run(ctl);
+ *   // ... handle transitions ...
+ * }
+ * @endcode
+ *
+ */
+struct RLStateRunner
+{  
+  /**
+   * @brief Called when an RL FSM state starts.
+   *
+   * Resets syncTime_ to trigger an immediate policy inference on the first run(),
+   * adds policy info to the GUI, and calls initializeRLObservation() to populate
+   * history buffers with the current robot state.
+   */
+  void start(mc_control::fsm::Controller & ctl_, const std::string & state_name);
+
+  /**
+   * @brief Called every controller timestep while an RL FSM state is active.
+   *
+   * Accumulates time and triggers policy inference every policyStepSize seconds.
+   * On each inference:
+   *   1. Build observation via getCurrentObservation().
+   *   2. Run rlPolicy->predict(observation) → currentAction.
+   *   3. Compute q_rl = currentAction * actionScale + q_zero.
+   *
+   * Between inference steps, q_rl is held constant. The PD torque is recomputed
+   * at every controller timestep using fresh joint state (equivalent to a real
+   * onboard PD loop running faster than the policy).
+    */
+  void run(mc_control::fsm::Controller & ctl_);
+
+  private:
+   std::string stateName_;
+};
