@@ -1,5 +1,5 @@
-#include "NewRLQPController.h"
+#include "KaleidoRLQPController.h"
 
 #include <mc_control/mc_controller.h>
 
-CONTROLLER_CONSTRUCTOR("NewRLQPController", NewRLQPController)
+CONTROLLER_CONSTRUCTOR("KaleidoRLQPController", KaleidoRLQPController)

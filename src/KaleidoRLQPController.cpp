@@ -1,4 +1,4 @@
-#include "NewRLQPController.h"
+#include "KaleidoRLQPController.h"
 
 #include <RBDyn/MultiBodyConfig.h>
 
@@ -11,7 +11,7 @@
 
 #include <cmath>
 
-NewRLQPController::NewRLQPController(mc_rbdyn::RobotModulePtr rm,
+KaleidoRLQPController::KaleidoRLQPController(mc_rbdyn::RobotModulePtr rm,
                                      double dt,
                                      const mc_rtc::Configuration & config)
 : mc_control::fsm::Controller(rm, dt, config, Backend::TVM)
@@ -40,10 +40,10 @@ NewRLQPController::NewRLQPController(mc_rbdyn::RobotModulePtr rm,
   addGui();
   addLog();
 
-  mc_rtc::log::success("[NewRLQPController] init done");
+  mc_rtc::log::success("[KaleidoRLQPController] init done");
 }
 
-bool NewRLQPController::run()
+bool KaleidoRLQPController::run()
 {
   // Use joystick plugin if present else jeyboard inputs
   controllerAvailable = datastore().has("Joystick::connected") && datastore().get<bool>("Joystick::connected");
@@ -62,13 +62,13 @@ bool NewRLQPController::run()
   return run; // Return false if QP fails
 }
 
-void NewRLQPController::reset(const mc_control::ControllerResetData & reset_data)
+void KaleidoRLQPController::reset(const mc_control::ControllerResetData & reset_data)
 {
   mc_control::fsm::Controller::reset(reset_data);
   rlRuntime_.reset(*this);
 }
 
-void NewRLQPController::RLuseJoyStickInputs()
+void KaleidoRLQPController::RLuseJoyStickInputs()
 {
   // Get joystick functions
   auto & stickFunc = datastore().get<std::function<Eigen::Vector2d(joystickAnalogicInputs)>>("Joystick::Stick");
@@ -124,7 +124,7 @@ void NewRLQPController::RLuseJoyStickInputs()
   rlRuntime_.setCommand({vel_x, vel_y, yaw_cmd});
 }
 
-void NewRLQPController::RLuseKeyboardInputs()
+void KaleidoRLQPController::RLuseKeyboardInputs()
 {
   struct Ctx
   {
@@ -174,18 +174,18 @@ void NewRLQPController::RLuseKeyboardInputs()
                          (active(2) ? maxVelCmd : 0.0) - (active(3) ? maxVelCmd : 0.0), rlRuntime_.command()(2)});
 }
 
-void NewRLQPController::activateQPControl(bool activate)
+void KaleidoRLQPController::activateQPControl(bool activate)
 {
   rlRuntime_.setUseQP(activate);
 }
 
-rlqp::RLPolicyRuntime & NewRLQPController::rlRuntime() { return rlRuntime_; }
+rlqp::RLPolicyRuntime & KaleidoRLQPController::rlRuntime() { return rlRuntime_; }
 
-const rlqp::RLPolicyRuntime & NewRLQPController::rlRuntime() const { return rlRuntime_; }
+const rlqp::RLPolicyRuntime & KaleidoRLQPController::rlRuntime() const { return rlRuntime_; }
 
-void NewRLQPController::initializeRobotBasics()
+void KaleidoRLQPController::initializeRobotBasics()
 {
-  mc_rtc::log::info("[NewRLQPController] Using torque control mode");
+  mc_rtc::log::info("[KaleidoRLQPController] Using torque control mode");
   if(!datastore().has("ControlMode"))
   {
     datastore().make<std::string>("ControlMode", "Torque");
@@ -200,7 +200,7 @@ void NewRLQPController::initializeRobotBasics()
   nbActuatedJoints = static_cast<int>(jointNames.size());
 }
 
-bool NewRLQPController::byPassQPControl()
+bool KaleidoRLQPController::byPassQPControl()
 {
   if(rlRuntime_.useQP()) return false; // QP is not bypassed, do nothing
 
@@ -225,41 +225,41 @@ bool NewRLQPController::byPassQPControl()
   return true;
 }
 
-void NewRLQPController::addLog()
+void KaleidoRLQPController::addLog()
 {
   // Robot State variables
-  logger().addLogEntry("NewRLQPController_kp_base", [this]() { return rlRuntime_.kpBase(); });
-  logger().addLogEntry("NewRLQPController_kd_base", [this]() { return rlRuntime_.kdBase(); });
-  logger().addLogEntry("NewRLQPController_kp_current", [this]() { return rlRuntime_.kp(); });
-  logger().addLogEntry("NewRLQPController_kd_current", [this]() { return rlRuntime_.kd(); });
-  logger().addLogEntry("NewRLQPController_pd_gains_ratio", [this]() { return rlRuntime_.pdGainsRatio(); });
+  logger().addLogEntry("KaleidoRLQPController_kp_base", [this]() { return rlRuntime_.kpBase(); });
+  logger().addLogEntry("KaleidoRLQPController_kd_base", [this]() { return rlRuntime_.kdBase(); });
+  logger().addLogEntry("KaleidoRLQPController_kp_current", [this]() { return rlRuntime_.kp(); });
+  logger().addLogEntry("KaleidoRLQPController_kd_current", [this]() { return rlRuntime_.kd(); });
+  logger().addLogEntry("KaleidoRLQPController_pd_gains_ratio", [this]() { return rlRuntime_.pdGainsRatio(); });
 
   // RL variables
-  logger().addLogEntry("NewRLQPController_RL_q", [this]() { return rlRuntime_.q_rl(); });
-  logger().addLogEntry("NewRLQPController_RL_qZero", [this]() { return rlRuntime_.q_zero(); });
-  logger().addLogEntry("NewRLQPController_RL_currentObservation", [this]() { return rlRuntime_.currentObservation(); });
-  logger().addLogEntry("NewRLQPController_RL_currentAction", [this]() { return rlRuntime_.currentAction(); });
-  logger().addLogEntry("NewRLQPController_RL_currentActionScaled", [this]() { return rlRuntime_.currentActionScaled(); });
-  logger().addLogEntry("NewRLQPController_RL_actionScale", [this]() { return rlRuntime_.actionScale(); });
-  logger().addLogEntry("NewRLQPController_RL_command", [this]() { return rlRuntime_.command(); });
+  logger().addLogEntry("KaleidoRLQPController_RL_q", [this]() { return rlRuntime_.q_rl(); });
+  logger().addLogEntry("KaleidoRLQPController_RL_qZero", [this]() { return rlRuntime_.q_zero(); });
+  logger().addLogEntry("KaleidoRLQPController_RL_currentObservation", [this]() { return rlRuntime_.currentObservation(); });
+  logger().addLogEntry("KaleidoRLQPController_RL_currentAction", [this]() { return rlRuntime_.currentAction(); });
+  logger().addLogEntry("KaleidoRLQPController_RL_currentActionScaled", [this]() { return rlRuntime_.currentActionScaled(); });
+  logger().addLogEntry("KaleidoRLQPController_RL_actionScale", [this]() { return rlRuntime_.actionScale(); });
+  logger().addLogEntry("KaleidoRLQPController_RL_command", [this]() { return rlRuntime_.command(); });
 
   // Controller state variables
-  logger().addLogEntry("NewRLQPController_useQP", [this]() { return rlRuntime_.useQP(); });
+  logger().addLogEntry("KaleidoRLQPController_useQP", [this]() { return rlRuntime_.useQP(); });
 
   // Log current policy (name and convention)
-  logger().addLogEntry("NewRLQPController_currentPolicy", [this]() { return rlRuntime_.currentPolicyName(); });
-  logger().addLogEntry("NewRLQPController_observationConvention", [this]() { return rlRuntime_.conventionName(); });
-  logger().addLogEntry("NewRLQPController_RL_phase", [this]() { return rlRuntime_.phase(); });
-  logger().addLogEntry("NewRLQPController_RL_policy_period_s", [this]() { return rlRuntime_.policyStepSize(); });
-  logger().addLogEntry("NewRLQPController_RL_update_count", [this]() { return rlRuntime_.policyUpdateCount(); });
+  logger().addLogEntry("KaleidoRLQPController_currentPolicy", [this]() { return rlRuntime_.currentPolicyName(); });
+  logger().addLogEntry("KaleidoRLQPController_observationConvention", [this]() { return rlRuntime_.conventionName(); });
+  logger().addLogEntry("KaleidoRLQPController_RL_phase", [this]() { return rlRuntime_.phase(); });
+  logger().addLogEntry("KaleidoRLQPController_RL_policy_period_s", [this]() { return rlRuntime_.policyStepSize(); });
+  logger().addLogEntry("KaleidoRLQPController_RL_update_count", [this]() { return rlRuntime_.policyUpdateCount(); });
 
   rlRuntime_.addLogObs(*this);
 }
 
-void NewRLQPController::addGui()
+void KaleidoRLQPController::addGui()
 {
   gui()->addElement(
-    {"NewRLQPController", "Policy"},
+    {"KaleidoRLQPController", "Policy"},
     mc_rtc::gui::Label("Current policy", [this]() { return rlRuntime_.currentPolicyName(); }),
     mc_rtc::gui::Label("Current policy folder", [this]() { return rlRuntime_.currentPolicyFolder(); }),
     mc_rtc::gui::Label("Observation convention", [this]() { return rlRuntime_.conventionName(); }),
@@ -280,7 +280,7 @@ void NewRLQPController::addGui()
     }));
 
   gui()->addElement(
-    {"NewRLQPController", "PD Gains"},
+    {"KaleidoRLQPController", "PD Gains"},
     mc_rtc::gui::NumberSlider(
       "PD Gains Ratio",
       [this]() { return rlRuntime_.pdGainsRatio(); },
@@ -291,7 +291,7 @@ void NewRLQPController::addGui()
     mc_rtc::gui::Label("Current kd", [this]() { return rlRuntime_.kd(); }));
 
   gui()->addElement(
-    {"NewRLQPController", "Control"},
+    {"KaleidoRLQPController", "Control"},
     mc_rtc::gui::Button("Toggle QP Control", [this]() {
       rlRuntime_.setUseQP(!rlRuntime_.useQP());
     }),
@@ -306,7 +306,7 @@ void NewRLQPController::addGui()
     }));
 
   gui()->addElement(
-    {"NewRLQPController", "Runtime"},
+    {"KaleidoRLQPController", "Runtime"},
     mc_rtc::gui::Label("Controller period [s]", [this]() { return timeStep; }),
     mc_rtc::gui::Label("Controller rate [Hz]", [this]() { return 1.0 / timeStep; }),
     mc_rtc::gui::Label("Policy period [s]", [this]() { return rlRuntime_.policyStepSize(); }),
@@ -315,7 +315,7 @@ void NewRLQPController::addGui()
     mc_rtc::gui::Label("Phase", [this]() { return rlRuntime_.phase(); }));
 
   gui()->addElement(
-    {"NewRLQPController", "Command"},
+    {"KaleidoRLQPController", "Command"},
     mc_rtc::gui::Button(
         "Toggle Joystick Plugin",
         [this]()
@@ -367,7 +367,7 @@ void NewRLQPController::addGui()
         [this]() { return maxYawCmd; }, [this](double v) { maxYawCmd = v; }));
 }
 
-void NewRLQPController::computeLimits()
+void KaleidoRLQPController::computeLimits()
 {
   const double epsilon = 1e-5;
 
@@ -406,7 +406,7 @@ void NewRLQPController::computeLimits()
     if(currentPos[idx][0] > posLimitUp + epsilon)
     {
       mc_rtc::log::warning(
-        "[NewRLQPController] Joint {} position upper limit breached: currentPos = {}, limit = {}",
+        "[KaleidoRLQPController] Joint {} position upper limit breached: currentPos = {}, limit = {}",
         joint,
         currentPos[idx][0],
         posLimitUp);
@@ -415,7 +415,7 @@ void NewRLQPController::computeLimits()
     if(currentPos[idx][0] < posLimitLow - epsilon)
     {
       mc_rtc::log::warning(
-        "[NewRLQPController] Joint {} position lower limit breached: currentPos = {}, limit = {}",
+        "[KaleidoRLQPController] Joint {} position lower limit breached: currentPos = {}, limit = {}",
         joint,
         currentPos[idx][0],
         posLimitLow);
@@ -424,7 +424,7 @@ void NewRLQPController::computeLimits()
     if(currentVel[idx][0] > velLimitUp + epsilon)
     {
       mc_rtc::log::warning(
-        "[NewRLQPController] Joint {} velocity upper limit breached: currentVel = {}, limit = {}",
+        "[KaleidoRLQPController] Joint {} velocity upper limit breached: currentVel = {}, limit = {}",
         joint,
         currentVel[idx][0],
         velLimitUp);
@@ -433,7 +433,7 @@ void NewRLQPController::computeLimits()
     if(currentVel[idx][0] < velLimitLow - epsilon)
     {
       mc_rtc::log::warning(
-        "[NewRLQPController] Joint {} velocity lower limit breached: currentVel = {}, limit = {}",
+        "[KaleidoRLQPController] Joint {} velocity lower limit breached: currentVel = {}, limit = {}",
         joint,
         currentVel[idx][0],
         velLimitLow);
@@ -442,7 +442,7 @@ void NewRLQPController::computeLimits()
     if(currentTau[idx][0] > tauLimitUp + epsilon)
     {
       mc_rtc::log::warning(
-        "[NewRLQPController] Joint {} torque upper limit breached: currentTau = {}, limit = {}",
+        "[KaleidoRLQPController] Joint {} torque upper limit breached: currentTau = {}, limit = {}",
         joint,
         currentTau[idx][0],
         tauLimitUp);
@@ -451,7 +451,7 @@ void NewRLQPController::computeLimits()
     if(currentTau[idx][0] < tauLimitLow - epsilon)
     {
       mc_rtc::log::warning(
-        "[NewRLQPController] Joint {} torque lower limit breached: currentTau = {}, limit = {}",
+        "[KaleidoRLQPController] Joint {} torque lower limit breached: currentTau = {}, limit = {}",
         joint,
         currentTau[idx][0],
         tauLimitLow);

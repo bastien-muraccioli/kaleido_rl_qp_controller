@@ -47,8 +47,8 @@ The documentation also includes practical guides for adapting the controller to 
 - `policies/minimalExample/`: smallest explicitly configured policy accepted by the current parser.
 - `policies/fullExample/`: exhaustive reference for every currently accepted policy and observation fields.
 - `policies/conventions.yaml`: placeholder joint groups, training orders, aliases and observation defaults.
-- `etc/NewRLQPController.in.yaml`: controller, observer and constraint examples.
-- `src/states/NewRLQPController_Initial.cpp`: policy-execution state.
+- `etc/KaleidoRLQPController.in.yaml`: controller, observer and constraint examples.
+- `src/states/KaleidoRLQPController_Initial.cpp`: policy-execution state.
 - `src/observation/`: reusable observation implementations.
 - `src/policy/`: policy loading, validation, ONNX inference and runtime state.
 
@@ -70,7 +70,7 @@ You here have access to 2 example directories. `minimalExample` with a basic, mi
 2. set the action and controlled-joint groups, provide training-consistent `kp` and `kd`, and add any required action scaling, default pose, phase period or command parameters in `policy.yaml`
 5. reproduce the exact observation order and history in `observations.yaml`.
 
-Set `default_policy` in `etc/NewRLQPController.in.yaml`.
+Set `default_policy` in `etc/KaleidoRLQPController.in.yaml`.
 
 ## Build
 
