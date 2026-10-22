@@ -19,7 +19,6 @@ KaleidoRLQPController::KaleidoRLQPController(mc_rbdyn::RobotModulePtr rm,
   config_ = config;
 
   //Initialize Constraints
-  // TODO(robot): review which constraints are valid for the selected robot.
   // These defaults provide joint-limit and self-collision protection
   selfCollisionConstraint->setCollisionsDampers(solver(), {zeta_selfCollision_, lambda_selfCollision_});
   solver().removeConstraintSet(dynamicsConstraint);
@@ -31,7 +30,7 @@ KaleidoRLQPController::KaleidoRLQPController(mc_rbdyn::RobotModulePtr rm,
   solver().removeTask(getPostureTask(robot().name()));
   // Initialize Task
   torqueJointTask = std::make_shared<mc_tasks::TorqueJointTask>(
-      solver(), robot().robotIndex(), 100.0, 1); // TODO(robot): tune stiffness/weight
+      solver(), robot().robotIndex(), 100.0, 1);
   solver().addTask(torqueJointTask);
   initializeRobotBasics();
 

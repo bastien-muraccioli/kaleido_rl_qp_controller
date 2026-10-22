@@ -1,0 +1,171 @@
+# Full policy configuration reference.
+# Every policy-level field currently accepted by the controller is represented.
+
+# # Optional. Defaults to the policy directory name.
+# name: fullExample
+
+# # Optional. Defaults to <name>.onnx.
+# onnx: fullExample.onnx
+
+action:
+  # Required. Joint group defining the ONNX action vector order and size.
+  joints: all
+
+  # # Optional. Defaults to action.joints. Used when only a subset of joints should be applied (ex: policy outputs all joints while only legs should be used)
+  # controlled_joints: joint_subset
+
+  # Optional. May be either one scalar for every joint...
+  # scale: 1.0
+  # ...or a complete or partial per-joint map. Unspecified joints use 1.0.
+  scale:
+    CHEST_Y: 0.443
+    CHEST_P: 0.443
+    HEAD_Y: 0.032
+    HEAD_P: 0.032
+    L_SHOULDER_P: 0.443
+    L_SHOULDER_R: 0.443
+    L_SHOULDER_Y: 0.443
+    L_ELBOW_P: 0.317
+    L_ELBOW_Y: 0.317
+    L_WRIST_P: 0.190
+    L_WRIST_Y: 0.190
+    L_HAND: 0.019
+    R_SHOULDER_P: 0.443
+    R_SHOULDER_R: 0.443
+    R_SHOULDER_Y: 0.443
+    R_ELBOW_P: 0.317
+    R_ELBOW_Y: 0.317
+    R_WRIST_P: 0.190
+    R_WRIST_Y: 0.190
+    R_HAND: 0.019
+    L_CROTCH_Y: 0.253
+    L_CROTCH_R: 0.792
+    L_CROTCH_P: 0.792
+    L_KNEE_P: 1.108
+    L_ANKLE_R: 0.633
+    L_ANKLE_P: 0.633
+    R_CROTCH_Y: 0.253
+    R_CROTCH_R: 0.792
+    R_CROTCH_P: 0.792
+    R_KNEE_P: 1.108
+    R_ANKLE_R: 0.633
+    R_ANKLE_P: 0.633
+
+  # Optional. When present, this map must contain every controller joint.
+  q0:
+    CHEST_Y: 0.000
+    CHEST_P: 0.000
+    HEAD_Y: 0.000
+    HEAD_P: 0.000
+    L_SHOULDER_P: 0.524
+    L_SHOULDER_R: 0.175
+    L_SHOULDER_Y: -0.087
+    L_ELBOW_P: -1.396
+    L_ELBOW_Y: 0.000
+    L_WRIST_P: 0.000
+    L_WRIST_Y: 0.000
+    L_HAND: 0.000
+    R_SHOULDER_P: 0.524
+    R_SHOULDER_R: -0.175
+    R_SHOULDER_Y: 0.087
+    R_ELBOW_P: -1.396
+    R_ELBOW_Y: 0.000
+    R_WRIST_P: 0.000
+    R_WRIST_Y: 0.000
+    R_HAND: 0.000
+    L_CROTCH_Y: 0.000
+    L_CROTCH_R: 0.000
+    L_CROTCH_P: -0.297
+    L_KNEE_P: 0.628
+    L_ANKLE_R: 0.000
+    L_ANKLE_P: -0.332
+    R_CROTCH_Y: 0.000
+    R_CROTCH_R: 0.000
+    R_CROTCH_P: -0.297
+    R_KNEE_P: 0.628
+    R_ANKLE_R: 0.000
+    R_ANKLE_P: -0.332
+
+control:
+  # Optional. Defaults to true.
+  use_QP: true
+
+  # Optional policy period. Defaults to 0.02 s.
+  # Specify either one of period_s and frequency_hz.
+  period_s: 0.02
+  # frequency_hz: 50.0
+
+  # Optional. Defaults to 1.0. Runtime gains are
+  # Kp = ratio * kp and Kd = sqrt(ratio) * kd.
+  pd_gains_ratio: 1.0
+
+  # Optional unless a phase observation is used. Defaults to 1.0 s.
+  phase_period: 1.0
+
+  # Required maps. They must contain every joint in robot().refJointOrder().
+  kp:
+    CHEST_Y: 78.9568
+    CHEST_P: 78.9568
+    HEAD_Y: 78.9568
+    HEAD_P: 78.9568
+    L_SHOULDER_P: 78.9568
+    L_SHOULDER_R: 78.9568
+    L_SHOULDER_Y: 78.9568
+    L_ELBOW_P: 78.9568
+    L_ELBOW_Y: 78.9568
+    L_WRIST_P: 78.9568
+    L_WRIST_Y: 78.9568
+    L_HAND: 78.9568
+    R_SHOULDER_P: 78.9568
+    R_SHOULDER_R: 78.9568
+    R_SHOULDER_Y: 78.9568
+    R_ELBOW_P: 78.9568
+    R_ELBOW_Y: 78.9568
+    R_WRIST_P: 78.9568
+    R_WRIST_Y: 78.9568
+    R_HAND: 78.9568
+    L_CROTCH_Y: 78.9568
+    L_CROTCH_R: 78.9568
+    L_CROTCH_P: 78.9568
+    L_KNEE_P: 78.9568
+    L_ANKLE_R: 78.9568
+    L_ANKLE_P: 78.9568
+    R_CROTCH_Y: 78.9568
+    R_CROTCH_R: 78.9568
+    R_CROTCH_P: 78.9568
+    R_KNEE_P: 78.9568
+    R_ANKLE_R: 78.9568
+    R_ANKLE_P: 78.9568
+  kd:
+    CHEST_Y: 12.5664
+    CHEST_P: 12.5664
+    HEAD_Y: 12.5664
+    HEAD_P: 12.5664
+    L_SHOULDER_P: 12.5664
+    L_SHOULDER_R: 12.5664
+    L_SHOULDER_Y: 12.5664
+    L_ELBOW_P: 12.5664
+    L_ELBOW_Y: 12.5664
+    L_WRIST_P: 12.5664
+    L_WRIST_Y: 12.5664
+    L_HAND: 12.5664
+    R_SHOULDER_P: 12.5664
+    R_SHOULDER_R: 12.5664
+    R_SHOULDER_Y: 12.5664
+    R_ELBOW_P: 12.5664
+    R_ELBOW_Y: 12.5664
+    R_WRIST_P: 12.5664
+    R_WRIST_Y: 12.5664
+    R_HAND: 12.5664
+    L_CROTCH_Y: 12.5664
+    L_CROTCH_R: 12.5664
+    L_CROTCH_P: 12.5664
+    L_KNEE_P: 12.5664
+    L_ANKLE_R: 12.5664
+    L_ANKLE_P: 12.5664
+    R_CROTCH_Y: 12.5664
+    R_CROTCH_R: 12.5664
+    R_CROTCH_P: 12.5664
+    R_KNEE_P: 12.5664
+    R_ANKLE_R: 12.5664
+    R_ANKLE_P: 12.5664
