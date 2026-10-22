@@ -1,14 +1,14 @@
 # Robot/training-environment conventions used to interpret observation names and joint order.
 
 conventions:
-  general:
-    observation_defaults:
+  # general:
+  #   observation_defaults:
       # Optional : if any general observation default could to be specify, specify them here. Example :
       # base_orientation:
       #   sensor: Accelerometer
       #   scale: 1.0
 
-  trainingConvention1: # example : mjlab, isaaclab, custom
+  mjlab:
     joint_groups:
       # The order here must exactly match the policy training/export order.
       # These joint groups can be used to resolve the joint order/joints used by the observations, as well as the actions outputed by the policy.

@@ -214,10 +214,14 @@ bool KaleidoRLQPController::byPassQPControl()
   int i = 0;
   for(const auto &joint_name : jointNames)
   {
-    const double q = q_mbc[robot().jointIndexByName(joint_name)][0];
-    const double q_dot = q_dot_mbc[robot().jointIndexByName(joint_name)][0];
+    // Skip ref joints not present in the model (or without a scalar q), keeping i aligned with refJointOrder
+    if(!robot().hasJoint(joint_name)) { i++; continue; }
+    const auto mbcIndex = robot().jointIndexByName(joint_name);
+    if(q_mbc[mbcIndex].empty()) { i++; continue; }
+    const double q = q_mbc[mbcIndex][0];
+    const double q_dot = q_dot_mbc[mbcIndex][0];
     tau_rl(i) = rlRuntime_.kp()(i) * (rlRuntime_.q_rl()(i) - q) - rlRuntime_.kd()(i) * q_dot;
-    robot().mbc().jointTorque[robot().jointIndexByName(joint_name)][0] = tau_rl(i);
+    robot().mbc().jointTorque[mbcIndex][0] = tau_rl(i);
     i++;
   }
 
@@ -388,8 +392,10 @@ void KaleidoRLQPController::computeLimits()
   for(size_t j = 0; j < jointNames.size(); ++j)
   {
     const std::string & joint = jointNames[j];
+    if(!real_robot.hasJoint(joint)) { continue; }
     const int i = real_robot.jointIndexByName(joint);
     const size_t idx = static_cast<size_t>(i);
+    if(currentPos[idx].empty()) { continue; }
 
     const double ds = dsPercent_ * (qLimUpper[idx][0] - qLimLower[idx][0]);
 

@@ -297,17 +297,16 @@ void RLPolicyRuntime::configureAction(const PolicyConfig & policy,
   }
   else
   {
-    size_t i = 0;
+    // Fill q_zero_ in controller (refJointOrder) order so it matches q_rl_/kp/kd indexing.
+    // Joints absent from the model (or without a scalar q) keep 0.
     std::shared_ptr<mc_tasks::PostureTask> FSMPostureTask = ctl.getPostureTask(ctl.robot().name());
-    auto posture = FSMPostureTask->posture();
-    for (const auto& j : ctl.robot().mb().joints()) {
-      const std::string& joint_name = j.name();
-      if (j.type() == rbd::Joint::Type::Rev) {
-        if (const auto& t = posture[ctl.robot().jointIndexByName(joint_name)]; !t.empty()) {
-          q_zero_(i) =t[0];
-          i++;
-        }
-      }
+    const auto posture = FSMPostureTask->posture();
+    for(size_t i = 0; i < controllerJointOrder_.size(); ++i)
+    {
+      const std::string & joint_name = controllerJointOrder_[i];
+      if(!ctl.robot().hasJoint(joint_name)) { continue; }
+      if(const auto & t = posture[ctl.robot().jointIndexByName(joint_name)]; !t.empty())
+        q_zero_(static_cast<Eigen::Index>(i)) = t[0];
     }
   }
 

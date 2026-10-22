@@ -15,12 +15,15 @@ namespace rlqp
 //============================================================================//
 namespace
 {
-double find_value(std::map<std::string, double> map, std::string joint, std::string map_name, double def = -1)
+double find_value(const std::map<std::string, double> & map,
+                  const std::string & joint,
+                  const std::string & map_name,
+                  double def)
 {
   auto it = map.find(joint);
-  if(it == map.end() && def != -1)
+  if(it == map.end())
   {
-    mc_rtc::log::warning("[PolicyConfig] Missing entry {} in {}", joint, map_name);
+    mc_rtc::log::warning("[PolicyConfig] Missing entry {} in {}, using {}", joint, map_name, def);
     return def;
   }
   return it->second;
@@ -176,8 +179,9 @@ PolicyConfig PolicyConfig::load(const std::string & policyFolder, std::vector<st
 
     kp_map = control("kp", std::map<std::string, double>());
     kd_map = control("kd", std::map<std::string, double>());
-    if(kp_map.size() < joint_size || kd_map.size() < mcRtcJoints.size())
-      mc_rtc::log::error_and_throw("[PolicyConfig] policy.yaml: kp and kd must contain all joints");
+    if(kp_map.empty() || kd_map.empty())
+      mc_rtc::log::error_and_throw("[PolicyConfig] policy.yaml: control.kp and control.kd are required");
+    // Joints missing from kp/kd (e.g. ref joints not present in the model) get 0 with a warning below
   }
   else
     mc_rtc::log::error_and_throw("[PolicyConfig]: policy.yaml should contain a \"control\" entry");
@@ -188,15 +192,17 @@ PolicyConfig PolicyConfig::load(const std::string & policyFolder, std::vector<st
     out.controlledJointGroup = out.actionJointGroup;
     if(action.has("controlled_joints")) action("controlled_joints", out.controlledJointGroup);
 
-    actionScale_map = action("scale", std::map<std::string, double>());
-    if(actionScale_map.size() != 0)
-      out.actionScale = std::vector<double>();
-    else
+    // scale: either a scalar for every joint, or a (partial) per-joint map where unspecified joints use 1.0
+    if(action.has("scale") && action("scale").isNumeric())
       out.actionScale = std::vector<double>(joint_size, action("scale", 1.0));
+    else
+    {
+      actionScale_map = action("scale", std::map<std::string, double>());
+      out.actionScale = std::vector<double>(joint_size, 1.0);
+    }
+    // q0: optional; when present, indexed in controller order. Missing joints get 0 with a warning.
     defaultPos_map = action("q0", std::map<std::string, double>());
-    if(!defaultPos_map.empty() && defaultPos_map.size() != joint_size)
-      mc_rtc::log::error_and_throw("[PolicyConfig] policy.yaml : default pos should contain all joints if specified");
-    out.defaultPosition = std::vector<double>(defaultPos_map.size());
+    out.defaultPosition = std::vector<double>(defaultPos_map.empty() ? 0 : joint_size, 0.0);
   }
   else
     mc_rtc::log::error_and_throw("[PolicyConfig]: policy.yaml should contain a \"action\" entry");
@@ -205,12 +211,12 @@ PolicyConfig PolicyConfig::load(const std::string & policyFolder, std::vector<st
   {
     const std::string & joint = mcRtcJoints[i];
 
-    out.kp[i] = find_value(kp_map, joint, "kp", 0);
-    out.kd[i] = find_value(kd_map, joint, "kd", 0);
-    double scale = find_value(actionScale_map, joint, "action scale", -1);
+    out.kp[i] = find_value(kp_map, joint, "kp", 0.0);
+    out.kd[i] = find_value(kd_map, joint, "kd", 0.0);
 
-    if(actionScale_map.size() > 0 && scale != -1) out.actionScale.push_back(scale);
-    if(defaultPos_map.size() > 0) out.defaultPosition[i] = find_value(defaultPos_map, joint, "q0", 0);
+    // Partial scale maps are allowed: unspecified joints silently keep 1.0
+    if(auto it = actionScale_map.find(joint); it != actionScale_map.end()) out.actionScale[i] = it->second;
+    if(!defaultPos_map.empty()) out.defaultPosition[i] = find_value(defaultPos_map, joint, "q0", 0.0);
   }
 
   if(out.controlledJointGroup.empty()) out.controlledJointGroup = out.actionJointGroup;

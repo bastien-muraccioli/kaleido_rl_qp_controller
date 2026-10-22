@@ -151,9 +151,9 @@ private:
   // More details are explained in the paper cf. Readme.md. 
   // TODO(robot) : These vealues must be tuned depending on the robot.
   double zeta_jointLimit_ = 1.2;
-  double lambda_jointLimit_ = 200.0; // Same gain for joint position limits and velocity limits.
+  double lambda_jointLimit_ = 100.0; // Same gain for joint position limits and velocity limits.
   double zeta_selfCollision_ = 1.2;
-  double lambda_selfCollision_ = 200.0;
+  double lambda_selfCollision_ = 100.0;
 
   rlqp::RLPolicyRuntime rlRuntime_;
 

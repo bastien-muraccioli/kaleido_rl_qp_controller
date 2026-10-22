@@ -16,7 +16,7 @@ robots:
     module: env/ground
 
 robot:
-  base_body: base_link
+  base_body: BODY
   observation_source: realRobot
 
 collisions:
