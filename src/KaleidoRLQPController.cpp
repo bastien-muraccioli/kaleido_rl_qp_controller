@@ -201,7 +201,12 @@ void KaleidoRLQPController::initializeRobotBasics()
 
 bool KaleidoRLQPController::byPassQPControl()
 {
-  if(rlRuntime_.useQP()) return false; // QP is not bypassed, do nothing
+  if(rlRuntime_.useQP())
+  {
+    if(!torqueJointTask->inSolver()) solver().addTask(torqueJointTask); 
+    return false; // QP is not bypassed, do nothing
+  }
+  if(torqueJointTask->inSolver()) solver().removeTask(torqueJointTask);
 
   robot().forwardKinematics();
   robot().forwardVelocity();

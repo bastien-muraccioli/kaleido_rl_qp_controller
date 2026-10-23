@@ -92,15 +92,15 @@ control:
 
   # Optional policy period. Defaults to 0.02 s.
   # Specify either one of period_s and frequency_hz.
-  period_s: 0.02
-  # frequency_hz: 50.0
+  period_s: 0.01
+  # frequency_hz: 100.0
 
   # Optional. Defaults to 1.0. Runtime gains are
   # Kp = ratio * kp and Kd = sqrt(ratio) * kd.
   pd_gains_ratio: 1.0
 
   # Optional unless a phase observation is used. Defaults to 1.0 s.
-  phase_period: 1.0
+  # phase_period: 1.0
 
   # Required maps. They must contain every joint in robot().refJointOrder().
   kp:

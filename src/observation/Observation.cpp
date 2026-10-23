@@ -217,12 +217,13 @@ Eigen::VectorXd Observation::readScale(const mc_rtc::Configuration & parameters,
   const std::vector<double> values = parameters(key, std::vector<double>());
   if (values.size() != 0)
   {
+    // A wrong-sized scale vector would be indexed out of bounds in compute() (garbage/NaN observations),
+    // so refuse it at configure time instead of only logging.
     if (values.size() != static_cast<size_t>(size))
-      mc_rtc::log::error("[Observation:{}] Parameter '{}' has size {}, expected {}",
-        name(), key, values.size(),size);
-        
-    Eigen::VectorXd out(size);
-    return Eigen::Map<const Eigen::VectorXd>(values.data(), values.size());
+      mc_rtc::log::error_and_throw("[Observation:{}] Parameter '{}' has size {}, expected {} (use a scalar to apply the same scale to every element)",
+        name(), key, values.size(), size);
+
+    return Eigen::Map<const Eigen::VectorXd>(values.data(), static_cast<Eigen::Index>(values.size()));
   }
 
   double scale = fallback;

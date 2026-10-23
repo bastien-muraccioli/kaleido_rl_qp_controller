@@ -54,7 +54,7 @@ observations:
       history: 5
       joints: all
       relative_to_default_velocity: true
-      scale: [1.0, 1.0, 1.0]
+      scale: 1.0
 
   - type: last_action
     parameters:
