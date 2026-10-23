@@ -9,6 +9,7 @@
 #include <mc_joystick_plugin/joystick_inputs.h>
 #include <termios.h>
 
+#include <algorithm>
 #include <cmath>
 
 KaleidoRLQPController::KaleidoRLQPController(mc_rbdyn::RobotModulePtr rm,
@@ -52,8 +53,11 @@ bool KaleidoRLQPController::run()
     RLuseKeyboardInputs();
 
   if(printLimits_) computeLimits();
+  // Without the QP, skip the solve: otherwise robot() holds the QP's one-step
+  // prediction of a contact-free robot, which the bypass PD would then track.
   bool run = mc_control::fsm::Controller::run(
-          mc_solver::FeedbackType::ClosedLoopIntegrateReal);
+          rlRuntime_.useQP() ? mc_solver::FeedbackType::ClosedLoopIntegrateReal
+                             : mc_solver::FeedbackType::SkipQP);
   if(byPassQPControl()) // Run RL without taking the QP into account
   {
     return true;
@@ -208,13 +212,14 @@ bool KaleidoRLQPController::byPassQPControl()
   }
   if(torqueJointTask->inSolver()) solver().removeTask(torqueJointTask);
 
-  robot().forwardKinematics();
-  robot().forwardVelocity();
-  robot().forwardAcceleration();
-
+  // PD on the MEASURED state, as in training (mjlab: kp (q_t - q) - kd qdot,
+  // clipped to the effort limit).
+  const mc_rbdyn::Robot & real = realRobot(robotName_);
   Eigen::VectorXd tau_rl = Eigen::VectorXd::Zero(nbActuatedJoints);
-  const std::vector<std::vector<double> > & q_mbc = robot().mbc().q;
-  const std::vector<std::vector<double> > & q_dot_mbc = robot().mbc().alpha;
+  const std::vector<std::vector<double> > & q_mbc = real.mbc().q;
+  const std::vector<std::vector<double> > & q_dot_mbc = real.mbc().alpha;
+  const auto & tl = robot().tl();
+  const auto & tu = robot().tu();
 
   int i = 0;
   for(const auto &joint_name : jointNames)
@@ -226,6 +231,7 @@ bool KaleidoRLQPController::byPassQPControl()
     const double q = q_mbc[mbcIndex][0];
     const double q_dot = q_dot_mbc[mbcIndex][0];
     tau_rl(i) = rlRuntime_.kp()(i) * (rlRuntime_.q_rl()(i) - q) - rlRuntime_.kd()(i) * q_dot;
+    if(!tl[mbcIndex].empty()) tau_rl(i) = std::clamp(tau_rl(i), tl[mbcIndex][0], tu[mbcIndex][0]);
     robot().mbc().jointTorque[mbcIndex][0] = tau_rl(i);
     i++;
   }

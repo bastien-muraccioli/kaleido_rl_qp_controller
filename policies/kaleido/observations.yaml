@@ -5,20 +5,20 @@
 training_convention: mjlab
 
 # Optional. Defines the order in which to handle all observations history. Defaults to true.
-history_order_newest_first: true
+history_order_newest_first: false  # mjlab CircularBuffer is oldest -> newest
 
 observations:
 
   - type: base_lin_vel
     parameters:
       history: 5
-      sensor: Accelerometer
+      body: base  # BODY-frame velocity of robot.base_body (observer estimate); the IMU has no linear velocity
       scale: [1.0, 1.0, 1.0]
 
   - type: base_ang_vel
     parameters:
       history: 5
-      sensor: Accelerometer
+      body: base  # BODY frame, as mjlab root_link_ang_vel_b
       scale: [1.0, 1.0, 1.0]
 
   - type: projected_gravity
@@ -26,13 +26,6 @@ observations:
       history: 5
       # Optional. Defaults to robot.base_body from the controller configuration.
       # body: baseBodyName
-      scale: [1.0, 1.0, 1.0]
-
-  - type: command
-    parameters:
-      history: 5
-      # Optional command size in [1, 3]. Defaults to 3.
-      size: 3
       scale: [1.0, 1.0, 1.0]
 
   - type: joint_pos
@@ -61,3 +54,10 @@ observations:
       history: 5
       joints: all
       scale: 1.0
+
+  - type: command
+    parameters:
+      history: 5
+      # Optional command size in [1, 3]. Defaults to 3.
+      size: 3
+      scale: [1.0, 1.0, 1.0]

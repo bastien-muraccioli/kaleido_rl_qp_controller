@@ -83,6 +83,10 @@ public:
 
 private:
   std::string sensorName_ = "Accelerometer";
+  // When `body` is given, read the estimated body velocity (mbc().bodyVelB),
+  // i.e. the body-frame velocity mjlab uses for root_link_*_vel_b.
+  bool useBody_ = false;
+  int bodyIndex_ = -1;
   Eigen::VectorXd scale_;
 };
 
@@ -98,6 +102,10 @@ public:
 
 private:
   std::string sensorName_ = "Accelerometer";
+  // When `body` is given, read the estimated body velocity (mbc().bodyVelB),
+  // i.e. the body-frame velocity mjlab uses for root_link_*_vel_b.
+  bool useBody_ = false;
+  int bodyIndex_ = -1;
   Eigen::VectorXd scale_;
 };
 
