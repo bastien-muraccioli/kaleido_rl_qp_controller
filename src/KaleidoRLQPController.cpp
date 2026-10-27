@@ -28,11 +28,12 @@ KaleidoRLQPController::KaleidoRLQPController(mc_rbdyn::RobotModulePtr rm,
   solver().addConstraintSet(dynamicsConstraint);
 
   // Remove the default posture task created by the FSM
-  solver().removeTask(getPostureTask(robot().name()));
+  postureTask = getPostureTask(robot().name());
+  solver().removeTask(postureTask);
   // Initialize Task
   torqueJointTask = std::make_shared<mc_tasks::TorqueJointTask>(
       solver(), robot().robotIndex(), 100.0, 1);
-  solver().addTask(torqueJointTask);
+  // solver().addTask(torqueJointTask);
   initializeRobotBasics();
 
   rlRuntime_.configure(config_, *this, torqueJointTask);
@@ -53,11 +54,24 @@ bool KaleidoRLQPController::run()
     RLuseKeyboardInputs();
 
   if(printLimits_) computeLimits();
-  // Without the QP, skip the solve: otherwise robot() holds the QP's one-step
-  // prediction of a contact-free robot, which the bypass PD would then track.
-  bool run = mc_control::fsm::Controller::run(
-          rlRuntime_.useQP() ? mc_solver::FeedbackType::ClosedLoopIntegrateReal
-                             : mc_solver::FeedbackType::SkipQP);
+
+  auto & robot = robots()[0];
+  if(contactModeChanged_)
+  {
+    if(contactConstraintsAreEnabled_)
+    {
+      Eigen::Vector6d footcontact_dof = Eigen::Vector6d::Ones();
+      addContact({robot.name(), "ground", "RightFootCenter", "AllGround", 0.7, footcontact_dof});
+      addContact({robot.name(), "ground", "LeftFootCenter", "AllGround", 0.7, footcontact_dof});
+    }
+    else
+    {
+      clearContacts();
+    }
+    contactModeChanged_ = false;
+  }
+  
+  bool run = manageModeSwitching();
   if(byPassQPControl()) // Run RL without taking the QP into account
   {
     return true;
@@ -188,14 +202,24 @@ const rlqp::RLPolicyRuntime & KaleidoRLQPController::rlRuntime() const { return 
 
 void KaleidoRLQPController::initializeRobotBasics()
 {
-  mc_rtc::log::info("[KaleidoRLQPController] Using torque control mode");
+  
   if(!datastore().has("ControlMode"))
   {
-    datastore().make<std::string>("ControlMode", "Torque");
+    datastore().make<std::string>("ControlMode", "Position");
   }
   else
   {
+    datastore().assign<std::string>("ControlMode", "Position");
+  }
+
+  if(isTorqueControl_)
+  {
+    mc_rtc::log::info("[KaleidoRLQPController] Using torque control mode");
     datastore().assign<std::string>("ControlMode", "Torque");
+  }
+  else
+  {
+    mc_rtc::log::info("[KaleidoRLQPController] Using position control mode");
   }
 
   robotName_ = robot().name();
@@ -207,8 +231,13 @@ bool KaleidoRLQPController::byPassQPControl()
 {
   if(rlRuntime_.useQP())
   {
-    if(!torqueJointTask->inSolver()) solver().addTask(torqueJointTask); 
+    if(!torqueJointTask->inSolver() && !postureTask->inSolver()) solver().addTask(torqueJointTask); 
     return false; // QP is not bypassed, do nothing
+  }
+  if(!isTorqueControl_)
+  {
+    mc_rtc::log::warning("[KaleidoRLQPController] byPassQP is not possible in position control mode.");
+    return false;
   }
   if(torqueJointTask->inSolver()) solver().removeTask(torqueJointTask);
 
@@ -259,6 +288,9 @@ void KaleidoRLQPController::addLog()
 
   // Controller state variables
   logger().addLogEntry("KaleidoRLQPController_useQP", [this]() { return rlRuntime_.useQP(); });
+  logger().addLogEntry("KaleidoRLQPController_contactConstraintsAreEnabled", [this]() { return contactConstraintsAreEnabled_; });
+  logger().addLogEntry("KaleidoRLQPController_isTorqueControl", [this]() { return isTorqueControl_; });
+  logger().addLogEntry("KaleidoRLQPController_isFloatingBaseReal", [this]() { return isFloatingBaseReal_; });
 
   // Log current policy (name and convention)
   logger().addLogEntry("KaleidoRLQPController_currentPolicy", [this]() { return rlRuntime_.currentPolicyName(); });
@@ -312,12 +344,25 @@ void KaleidoRLQPController::addGui()
     mc_rtc::gui::Label("QP Control", [this]() {
       return rlRuntime_.useQP() ? "Enforced" : "Bypassed";
     }),
+    mc_rtc::gui::Label("Current Control Mode", [this]() {
+      return isTorqueControl_ ? "Torque Control" : "Position Control";
+    }),
+    mc_rtc::gui::Label("Contact constraint", [this]() {
+      return contactConstraintsAreEnabled_ ? "Enforced" : "Disabled";
+    }),
     mc_rtc::gui::Button("Toggle print joint limits", [this]() {
       printLimits_ = !printLimits_;
     }),
     mc_rtc::gui::Label("Print joint limits", [this]() {
       return printLimits_ ? "Enabled" : "Disabled";
-    }));
+    }),
+    mc_rtc::gui::NumberSlider("nyquist_fraction", nyquistFraction_, 0.01, 0.99
+    ),
+    mc_rtc::gui::Button("Toggle FB filter", [this]() { openLoopRealFBlowPassFilterActive = !openLoopRealFBlowPassFilterActive; 
+    }),
+    mc_rtc::gui::Label("FB filter", [this]() { return openLoopRealFBlowPassFilterActive ? "Enabled" : "Disabled"; }
+    )
+    );
 
   gui()->addElement(
     {"KaleidoRLQPController", "Runtime"},
@@ -379,6 +424,19 @@ void KaleidoRLQPController::addGui()
     mc_rtc::gui::NumberInput(
         "max_yaw_cmd",
         [this]() { return maxYawCmd; }, [this](double v) { maxYawCmd = v; }));
+
+  auto & robot = realRobot(robots()[0].name());
+  for(const auto & ft_sensor : robot.forceSensors())
+  {
+    gui()->addElement({"KaleidoRLQPController", "FT Sensors", ft_sensor.name()},
+                      mc_rtc::gui::Force(
+                          ft_sensor.name(), [&ft_sensor, &robot]() { return ft_sensor.wrenchWithoutGravity(robot); },
+                          [&ft_sensor, &robot]() { return robot.bodyPosW(ft_sensor.parent()); }));
+    gui()->addElement({"KaleidoRLQPController", "Uncalibrated FT Sensors", ft_sensor.name()},
+                      mc_rtc::gui::Force(
+                          ft_sensor.name(), [&ft_sensor, &robot]() { return ft_sensor.wrench(); },
+                          [&ft_sensor, &robot]() { return robot.bodyPosW(ft_sensor.parent()); }));
+  }
 }
 
 void KaleidoRLQPController::computeLimits()
@@ -474,3 +532,90 @@ void KaleidoRLQPController::computeLimits()
     }
   }
 }
+
+void KaleidoRLQPController::activateTorqueControl(bool activate)
+{
+  if(activate && !isTorqueControl_)
+  {
+    isTorqueControl_ = true;
+    isFloatingBaseReal_ = false;
+    controlModeChanged_ = true;
+  }
+  else if(!activate && isTorqueControl_)
+  {
+    isTorqueControl_ = false;
+    controlModeChanged_ = true;
+  }
+}
+
+void KaleidoRLQPController::activateFloatingBaseReal(bool activate)
+{
+  if(activate && !isFloatingBaseReal_)
+  {
+    isFloatingBaseReal_ = true;
+    isTorqueControl_ = false;
+    controlModeChanged_ = true;
+  }
+  else if(!activate && isFloatingBaseReal_)
+  {
+    isFloatingBaseReal_ = false;
+    controlModeChanged_ = true;
+  }
+}
+
+void KaleidoRLQPController::activateContactConstraints(bool activate)
+{
+  if(activate && !contactConstraintsAreEnabled_)
+  {
+    contactConstraintsAreEnabled_ = true;
+    contactModeChanged_ = true;
+  }
+  else if(!activate && contactConstraintsAreEnabled_)
+  {
+    contactConstraintsAreEnabled_ = false;
+    contactModeChanged_ = true;
+  }
+}
+
+void KaleidoRLQPController::activateExternalTorqueComputation(bool activate)
+{
+  if(activate != datastore().call<bool>("EF_Estimator::isActive"))
+  {
+    datastore().call("EF_Estimator::toggleActive");
+  }
+}
+
+bool KaleidoRLQPController::manageModeSwitching()
+{
+  if(controlModeChanged_)
+  {
+    if(isTorqueControl_)
+    {
+      mc_rtc::log::info("[KaleidoRLQPController] Switching to Torque Control");
+      datastore().assign<std::string>("ControlMode", "Torque");
+    }
+    else
+    {
+      mc_rtc::log::info("[KaleidoRLQPController] Switching to Position Control");
+      datastore().assign<std::string>("ControlMode", "Position");
+    }
+    controlModeChanged_ = false;
+  }
+
+  if(isTorqueControl_)
+  {
+    return mc_control::fsm::Controller::run(mc_solver::FeedbackType::ClosedLoopIntegrateReal);
+    // return mc_control::fsm::Controller::run(mc_solver::FeedbackType::ClosedLoop);
+  }
+  if(isFloatingBaseReal_)
+  {
+    solver().setNyquistFraction(nyquistFraction_);
+    solver().setOpenLoopRealFBlowPassFilterActive(openLoopRealFBlowPassFilterActive);
+    return mc_control::fsm::Controller::run(mc_solver::FeedbackType::OpenLoopWithRealFloatingBase);
+  }
+  else
+  {
+    return mc_control::fsm::Controller::run();
+  }
+}
+

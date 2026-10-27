@@ -1,3 +1,5 @@
 add_fsm_state_simple(KaleidoRLQPController_Initial)
+add_fsm_state_simple(KaleidoRLQPController_RL)
+add_fsm_state_simple(KaleidoRLQPController_RLPos)
 
 add_fsm_data_directory(data)
