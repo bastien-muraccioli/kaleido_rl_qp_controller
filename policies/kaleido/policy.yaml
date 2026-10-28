@@ -88,7 +88,7 @@ action:
 
 control:
   # Optional. Defaults to true.
-  use_QP: false
+  use_QP: true
 
   # Optional policy period. Defaults to 0.02 s.
   # Specify either one of period_s and frequency_hz.

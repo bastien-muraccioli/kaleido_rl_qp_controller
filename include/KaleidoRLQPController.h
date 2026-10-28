@@ -86,6 +86,18 @@ struct KaleidoRLQPController_DLLAPI KaleidoRLQPController : public mc_control::f
   /** @brief Enable or disable the CBF-QP layer at runtime. */
   void activateQPControl(bool activate);
 
+  /** @brief Enable or disable torque control mode at runtime. */
+  void activateTorqueControl(bool activate);
+
+  /** @brief Enable or disable floating base real mode at runtime. */
+  void activateFloatingBaseReal(bool activate);
+
+  /** @brief Enable or disable contact constraints at runtime. */
+  void activateContactConstraints(bool activate);
+
+  /** @brief Enable or disable external torque computation at runtime. */
+  void activateExternalTorqueComputation(bool activate);
+
   rlqp::RLPolicyRuntime & rlRuntime();
   const rlqp::RLPolicyRuntime & rlRuntime() const;
 
@@ -100,6 +112,9 @@ struct KaleidoRLQPController_DLLAPI KaleidoRLQPController : public mc_control::f
 
   /** @brief Torque-space whole-body task fed into the CBF-QP solver. */
   std::shared_ptr<mc_tasks::TorqueJointTask> torqueJointTask;
+
+  /** @brief Posture task used for the initialization phase. */
+  std::shared_ptr<mc_tasks::PostureTask> postureTask;
 
   /** @brief Total number of actuated joints (from robot().refJointOrder()). */
   int nbActuatedJoints = 0;
@@ -133,6 +148,8 @@ private:
   bool byPassQPControl();
   /** @brief Log warnings when joint position/velocity/torque limits are exceeded. */
   void computeLimits();
+  /** @brief Handle switching between Torque and Position control modes. */
+  bool manageModeSwitching();
 
 private:
   bool printLimits_ = true;
@@ -165,4 +182,14 @@ private:
 
   double maxVelCmd;
   double maxYawCmd;
+
+  // --- Control Mode Switching ---
+  bool contactModeChanged_ = true;
+  bool contactConstraintsAreEnabled_ = true;
+  bool isTorqueControl_ = false;
+  bool isFloatingBaseReal_ = false;
+  bool controlModeChanged_ = false;
+  // real floating base mode parameters
+  double nyquistFraction_ = 0.3;
+  bool openLoopRealFBlowPassFilterActive = true;
 };

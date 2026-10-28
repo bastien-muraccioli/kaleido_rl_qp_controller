@@ -26,14 +26,15 @@ KaleidoRLQPController::KaleidoRLQPController(mc_rbdyn::RobotModulePtr rm,
   dynamicsConstraint = mc_rtc::unique_ptr<mc_solver::DynamicsConstraint>(
     new mc_solver::DynamicsConstraint(robots(), 0, {diPercent_, dsPercent_, 0.0, zeta_jointLimit_, lambda_jointLimit_}, velPercent_, true));
   solver().addConstraintSet(dynamicsConstraint);
-
-  // Remove the default posture task created by the FSM
+  
+  // Initialize Tasks
   postureTask = getPostureTask(robot().name());
-  solver().removeTask(postureTask);
-  // Initialize Task
   torqueJointTask = std::make_shared<mc_tasks::TorqueJointTask>(
       solver(), robot().robotIndex(), 100.0, 1);
-  // solver().addTask(torqueJointTask);
+  
+  // Remove the default posture task created by the FSM
+  solver().removeTask(postureTask);
+
   initializeRobotBasics();
 
   rlRuntime_.configure(config_, *this, torqueJointTask);
