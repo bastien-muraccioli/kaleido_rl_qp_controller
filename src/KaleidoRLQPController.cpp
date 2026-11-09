@@ -261,7 +261,7 @@ bool KaleidoRLQPController::byPassQPControl()
     const double q = q_mbc[mbcIndex][0];
     const double q_dot = q_dot_mbc[mbcIndex][0];
     tau_rl(i) = rlRuntime_.kp()(i) * (rlRuntime_.q_rl()(i) - q) - rlRuntime_.kd()(i) * q_dot;
-    if(!tl[mbcIndex].empty()) tau_rl(i) = std::clamp(tau_rl(i), tl[mbcIndex][0], tu[mbcIndex][0]);
+    // if(!tl[mbcIndex].empty()) tau_rl(i) = std::clamp(tau_rl(i), tl[mbcIndex][0], tu[mbcIndex][0]);
     robot().mbc().jointTorque[mbcIndex][0] = tau_rl(i);
     i++;
   }
