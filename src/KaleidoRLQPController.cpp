@@ -299,8 +299,7 @@ void KaleidoRLQPController::addLog()
   logger().addLogEntry("KaleidoRLQPController_RL_phase", [this]() { return rlRuntime_.phase(); });
   logger().addLogEntry("KaleidoRLQPController_RL_policy_period_s", [this]() { return rlRuntime_.policyStepSize(); });
   logger().addLogEntry("KaleidoRLQPController_RL_update_count", [this]() { return rlRuntime_.policyUpdateCount(); });
-
-  rlRuntime_.addLogObs(*this);
+  // Observation entries are registered by RLPolicyRuntime on each policy load
 }
 
 void KaleidoRLQPController::addGui()
@@ -310,7 +309,7 @@ void KaleidoRLQPController::addGui()
     mc_rtc::gui::Label("Current policy", [this]() { return rlRuntime_.currentPolicyName(); }),
     mc_rtc::gui::Label("Current policy folder", [this]() { return rlRuntime_.currentPolicyFolder(); }),
     mc_rtc::gui::Label("Observation convention", [this]() { return rlRuntime_.conventionName(); }),
-    mc_rtc::gui::Label("Observation source", [this]() { return rlRuntime_.observationSource(); }),
+    mc_rtc::gui::Label("Observation source (default)", [this]() { return rlRuntime_.observationSource(); }),
     mc_rtc::gui::Label("Base body", [this]() { return rlRuntime_.baseBody(); }),
     mc_rtc::gui::Label("Observation size", [this]() { return rlRuntime_.observationSize(); }),
     mc_rtc::gui::Label("Action size", [this]() { return rlRuntime_.actionSize(); }),

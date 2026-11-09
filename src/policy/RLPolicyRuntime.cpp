@@ -27,11 +27,11 @@ void RLPolicyRuntime::configure(const mc_rtc::Configuration & controllerConfig,
   if(controllerConfig_.has("robot"))
   {
     baseBody_ = controllerConfig_("robot")("base_body", std::string("base_link"));
-    observationSource_ = controllerConfig_("robot")("observation_source", std::string("realRobot"));
+    if(controllerConfig_("robot").has("observation_source"))
+      mc_rtc::log::error_and_throw("[RLPolicyRuntime] robot.observation_source is no longer read from the controller "
+                                   "configuration. Remove it and set observation_source in observations.yaml "
+                                   "(policy-wide) or in an observation's parameters. Default: realRobot");
   }
-
-  if(observationSource_ != "realRobot" && observationSource_ != "robot")
-    mc_rtc::log::error_and_throw("[RLPolicyRuntime] Invalid robot.observation_source '{}'. Expected 'realRobot' or 'robot'.", observationSource_);
 
   const int nbActuatedJoints = static_cast<int>(controllerJointOrder_.size());
 
@@ -169,9 +169,7 @@ void RLPolicyRuntime::loadPolicy(const std::string & policyName,
 
   configureControl(policy, ctl, torqueTask);
 
-  const std::string conventionName =
-    policy.observationsConfiguration("training_convention", std::string("mjlab"));
-  activeConvention_ = ObservationConvention::fromConfig(controllerConfig_, conventionName);
+  activeConvention_ = policy.convention;
 
   configureAction(policy, ctl);
   configureNetwork(policy);
@@ -181,6 +179,7 @@ void RLPolicyRuntime::loadPolicy(const std::string & policyName,
   phaseNormalized_ = 0.0;
   resetObservationHistory(ctl);
   validateObservationAgainstNetwork();
+  addLogObs(ctl);
 
   policyTimer_ = policyStepSize_;
   policyUpdateCount_ = 0;
@@ -291,22 +290,22 @@ void RLPolicyRuntime::configureAction(const PolicyConfig & policy,
 
   actionScale_ = Eigen::Map<const Eigen::VectorXd>(policy.actionScale.data(), policy.actionScale.size());
 
-  if (!policy.defaultPosition.empty())
+  // NaN entries: neither the ONNX metadata nor policy.yaml gives a q0, use the posture task
+  q_zero_ = Eigen::Map<const Eigen::VectorXd>(policy.defaultPosition.data(), policy.defaultPosition.size());
+  if(q_zero_.hasNaN())
   {
-    q_zero_ = Eigen::Map<const Eigen::VectorXd>(policy.defaultPosition.data(), policy.defaultPosition.size());
-  }
-  else
-  {
-    // Fill q_zero_ in controller (refJointOrder) order so it matches q_rl_/kp/kd indexing.
-    // Joints absent from the model (or without a scalar q) keep 0.
+    // Fill in controller (refJointOrder) order so q_zero_ matches q_rl_/kp/kd indexing.
+    // Joints absent from the model (or without a scalar q) get 0.
     std::shared_ptr<mc_tasks::PostureTask> FSMPostureTask = ctl.getPostureTask(ctl.robot().name());
     const auto posture = FSMPostureTask->posture();
     for(size_t i = 0; i < controllerJointOrder_.size(); ++i)
     {
+      const auto idx = static_cast<Eigen::Index>(i);
+      if(!std::isnan(q_zero_(idx))) { continue; }
+      q_zero_(idx) = 0.0;
       const std::string & joint_name = controllerJointOrder_[i];
       if(!ctl.robot().hasJoint(joint_name)) { continue; }
-      if(const auto & t = posture[ctl.robot().jointIndexByName(joint_name)]; !t.empty())
-        q_zero_(static_cast<Eigen::Index>(i)) = t[0];
+      if(const auto & t = posture[ctl.robot().jointIndexByName(joint_name)]; !t.empty()) q_zero_(idx) = t[0];
     }
   }
 
@@ -353,9 +352,41 @@ void RLPolicyRuntime::configureNetwork(const PolicyConfig & policy)
 void RLPolicyRuntime::configureObservations(const PolicyConfig & policy,
                                             KaleidoRLQPController & ctl)
 {
-  observationManager_.load(policy.observationsConfiguration, controllerConfig_, observationRegistry_);
+  ctl.logger().removeLogEntries(this);
+  observationManager_.load(policy.observationsConfiguration, activeConvention_, observationRegistry_);
   observationManager_.configure(makeObservationContext(ctl));
+  for(const auto & entry : observationManager_.entries())
+  {
+    if(entry.observation->observationSource() != observationManager_.defaultSource())
+      mc_rtc::log::info("[RLPolicyRuntime:{}] Observation '{}' reads '{}' (policy default: '{}')", policy.name,
+                        entry.observation->name(), entry.observation->observationSource(),
+                        observationManager_.defaultSource());
+  }
   currentObservation_ = Eigen::VectorXd::Zero(policy_->getObservationSize());
+
+  // Term names are free in the training config, so a name mismatch could very much be normal -> warning
+  const std::vector<std::string> & expected = policy.metadata.observationNames;
+  if(expected.empty()) return;
+  const auto & entries = observationManager_.entries();
+  std::vector<std::string> mismatches;
+  for(size_t i = 0; i < std::max(expected.size(), entries.size()); ++i)
+  {
+    const std::string onnx = i < expected.size() ? expected[i] : "<none>";
+    if(i < entries.size())
+    {
+      const Observation & obs = *entries[i].observation;
+      if(onnx == obs.name() || onnx == obs.requestedType() || onnx == obs.type()) continue;
+      mismatches.push_back(fmt::format("#{}: observations.yaml '{}', ONNX '{}'", i, obs.name(), onnx));
+    }
+    else
+      mismatches.push_back(fmt::format("#{}: observations.yaml <none>, ONNX '{}'", i, onnx));
+  }
+  if(mismatches.empty()) return;
+  std::string list;
+  for(const auto & m : mismatches) list += "\n  " + m;
+  mc_rtc::log::warning("[RLPolicyRuntime:{}] observations.yaml does not match the ONNX observation_names (order "
+                       "matters). Check the order, or set 'name' on an entry to the ONNX term name:{}",
+                       policy.name, list);
 }
 
 void RLPolicyRuntime::resetObservationHistory(KaleidoRLQPController & ctl)
@@ -391,7 +422,8 @@ void RLPolicyRuntime::validateObservationAgainstNetwork() const
 ObservationContext RLPolicyRuntime::makeObservationContext(KaleidoRLQPController & ctl)
 {
   return ObservationContext{
-    selectedObservationRobot(ctl),
+    ctl.realRobot(robotName_),
+    ctl.robot(),
     baseBody_,
     controllerJointOrder_,
     actionToControllerMap_,
@@ -402,33 +434,22 @@ ObservationContext RLPolicyRuntime::makeObservationContext(KaleidoRLQPController
     activeConvention_};
 }
 
-mc_rbdyn::Robot & RLPolicyRuntime::selectedObservationRobot(KaleidoRLQPController & ctl)
-{
-  if(observationSource_ == "robot")
-    return ctl.robot();
-  return ctl.realRobot(robotName_);
-}
-
 
 void RLPolicyRuntime::addLogObs(KaleidoRLQPController & ctl)
 {
-  for(const auto & entry : observationManager_.entries())
+  // Callbacks read the live history buffers: capturing an Entry would log a frozen copy
+  const auto & entries = observationManager_.entries();
+  for(size_t e = 0; e < entries.size(); ++e)
   {
-    const std::string baseName = "KaleidoRLQPController_Observations_" + entry.observation->name();
-    const size_t size = entry.historyBuffer.size();
-    if(size == 1)
+    const std::string baseName = "KaleidoRLQPController_Observations_" + entries[e].observation->name();
+    const size_t size = entries[e].historyBuffer.size();
+    for(size_t i = 0; i < size; ++i)
     {
-      ctl.logger().addLogEntry(baseName, [entry]() { return entry.historyBuffer[0]; });
-    }
-    else if(size > 1)
-    {
-      for(size_t i = 0; i < size; ++i)
-      {
-        const size_t bufferIndex = observationManager_.newest_first() ? i : size - 1 - i;
-        const std::string suffix = i == 0 ? "_t" : "_t-" + std::to_string(i);
-        ctl.logger().addLogEntry(baseName + suffix,
-                                 [entry, bufferIndex]() { return entry.historyBuffer[bufferIndex]; });
-      }
+      // historyBuffer[0] is always the newest value, history_order_newest_first only affects the policy input
+      // The newest value keeps the plain name whatever the history length, so its log continues across policies
+      const std::string suffix = i == 0 ? "" : "_t-" + std::to_string(i);
+      ctl.logger().addLogEntry(baseName + suffix, this,
+                               [this, e, i]() { return observationManager_.entries()[e].historyBuffer[i]; });
     }
   }
 }

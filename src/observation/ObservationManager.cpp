@@ -13,29 +13,44 @@ mc_rtc::Configuration emptyConfiguration()
   return mc_rtc::Configuration();
 }
 
+bool parseObservationSource(const std::string & source, const std::string & where)
+{
+  if(source != "realRobot" && source != "robot")
+    mc_rtc::log::error_and_throw("[ObservationManager] Invalid observation_source '{}' in {}. Expected 'realRobot' or 'robot'",
+                                 source, where);
+  return source == "realRobot";
+}
+
 } // namespace
 
 ObservationManager::ObservationManager() {}
 
 void ObservationManager::load(const mc_rtc::Configuration & observationsConfig,
-                              const mc_rtc::Configuration & controllerConfig,
+                              const ObservationConvention & convention,
                               const ObservationRegistry & registry)
 {
   entries_.clear();
   size_ = 0;
 
-  const std::string conventionName = observationsConfig("training_convention", std::string("mjlab"));
-  convention_ = ObservationConvention::fromConfig(controllerConfig, conventionName);
+  convention_ = convention;
 
   if(!observationsConfig.has("observations"))
     mc_rtc::log::error_and_throw("[ObservationManager] observations.yaml has no required 'observations' list");
 
   mc_rtc::Configuration observations = observationsConfig("observations");
 
+  // Policy-wide defaults, overridden by each entry's parameters
+  ObservationConfig defaults;
+  defaults.history = observationsConfig("history", 1);
+  if(defaults.history <= 0)
+    mc_rtc::log::error_and_throw("[ObservationManager] observations.yaml has invalid history {}", defaults.history);
+  defaultSource_ = observationsConfig("observation_source", std::string("realRobot"));
+  defaults.useRealRobot = parseObservationSource(defaultSource_, "observations.yaml");
+
   Entry entry;
   for(size_t i = 0; i < observations.size(); ++i)
   {
-    ObservationConfig config = parseObservationConfig(observations[i]);
+    ObservationConfig config = parseObservationConfig(observations[i], defaults);
     config.type = convention_.resolveType(config.requestedType);
 
     entry.observation = registry.create(config, convention_);
@@ -99,9 +114,10 @@ Eigen::VectorXd ObservationManager::compute(const ObservationContext & context)
   return out;
 }
 
-ObservationConfig ObservationManager::parseObservationConfig(const mc_rtc::Configuration & config) const
+ObservationConfig ObservationManager::parseObservationConfig(const mc_rtc::Configuration & config,
+                                                             const ObservationConfig & defaults) const
 {
-  ObservationConfig out;
+  ObservationConfig out = defaults;
 
   out.requestedType = config("type", std::string(""));
 
@@ -114,16 +130,16 @@ ObservationConfig ObservationManager::parseObservationConfig(const mc_rtc::Confi
   out.name = out.requestedType;
   config("name", out.name);
 
-  out.history = config("parameters")("history", 1);
-
-  if(out.history <= 0)
-  {
-    mc_rtc::log::error_and_throw("[ObservationManager] Observation '{}' has invalid history {}", out.name, out.history);
-  }
-
   if(config.has("parameters"))
   {
     out.parameters = config("parameters");
+    out.parameters("history", out.history);
+    if(out.history <= 0)
+      mc_rtc::log::error_and_throw("[ObservationManager] Observation '{}' has invalid history {}", out.name,
+                                   out.history);
+    if(out.parameters.has("observation_source"))
+      out.useRealRobot = parseObservationSource(out.parameters("observation_source").operator std::string(),
+                                                "observation '" + out.name + "'");
   }
   else
   {

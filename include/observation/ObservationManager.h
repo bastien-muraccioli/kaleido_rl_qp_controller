@@ -28,7 +28,7 @@ public:
    * Call configure() after the runtime has a valid ObservationContext.
    */
   void load(const mc_rtc::Configuration & observationsConfig,
-            const mc_rtc::Configuration & controllerConfig,
+            const ObservationConvention & convention,
             const ObservationRegistry & registry);
 
   /** @brief Resolve body/joint indices and compute the final vector size. */
@@ -59,11 +59,17 @@ public:
     std::deque<Eigen::VectorXd> historyBuffer;
   };
 
-  std::vector<Entry> entries()
+  /** @brief Top-level observation_source of observations.yaml (realRobot if absent). */
+  const std::string & defaultSource() const
+  {
+    return defaultSource_;
+  };
+
+  const std::vector<Entry> & entries() const
   {
     return entries_;
   };
-  bool newest_first()
+  bool newest_first() const
   {
     return newest_first_;
   };
@@ -71,13 +77,14 @@ public:
 private:
   /** @brief parse observations.yaml. Handles entries history here and leave observation-specific to respective
    * Observation class */
-  ObservationConfig parseObservationConfig(const mc_rtc::Configuration & config) const;
+  ObservationConfig parseObservationConfig(const mc_rtc::Configuration & config, const ObservationConfig & defaults) const;
   Eigen::VectorXd flattenHistory(const Entry & entry) const;
 
   std::vector<Entry> entries_;
   ObservationConvention convention_;
   int size_ = 0;
   bool newest_first_ = true;
+  std::string defaultSource_ = "realRobot";
 };
 
 } // namespace rlqp

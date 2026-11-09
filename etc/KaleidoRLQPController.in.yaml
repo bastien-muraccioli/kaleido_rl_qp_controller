@@ -17,7 +17,7 @@ robots:
 
 robot:
   base_body: BODY
-  observation_source: realRobot
+  # observation_source moved to policies/<policy>/observations.yaml (policy-wide or per observation)
 
 collisions:
   - type: collision

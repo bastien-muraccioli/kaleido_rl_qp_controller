@@ -1,4 +1,5 @@
 #include "policy/PolicyConfig.h"
+#include "policy/RLPolicyInterface.h"
 
 #include <mc_rtc/logging.h>
 
@@ -6,6 +7,8 @@
 #include <cmath>
 #include <dirent.h>
 #include <fstream>
+#include <limits>
+#include <sstream>
 #include <sys/stat.h>
 
 namespace rlqp
@@ -15,18 +18,81 @@ namespace rlqp
 //============================================================================//
 namespace
 {
-double find_value(const std::map<std::string, double> & map,
-                  const std::string & joint,
-                  const std::string & map_name,
-                  double def)
+/** Split a comma-separated metadata value, trimming spaces */
+std::vector<std::string> splitList(const std::string & value)
 {
-  auto it = map.find(joint);
-  if(it == map.end())
+  std::vector<std::string> out;
+  std::stringstream ss(value);
+  std::string item;
+  while(std::getline(ss, item, ','))
   {
-    mc_rtc::log::warning("[PolicyConfig] Missing entry {} in {}, using {}", joint, map_name, def);
-    return def;
+    const size_t first = item.find_first_not_of(" \t\n");
+    const size_t last = item.find_last_not_of(" \t\n");
+    if(first != std::string::npos) out.push_back(item.substr(first, last - first + 1));
   }
-  return it->second;
+  return out;
+}
+
+/** Check if same values up to rounding*/
+bool sameValue(double yaml, double metadata)
+{
+  return std::abs(yaml - metadata) <= 1e-3 + 1e-2 * std::abs(metadata);
+}
+
+/** Read a per-joint map from policy.yaml; every key must be a controller joint (catches typos) */
+std::map<std::string, double> readJointMap(const mc_rtc::Configuration & config,
+                                           const std::string & key,
+                                           const std::vector<std::string> & joints,
+                                           const std::string & policyName)
+{
+  const std::map<std::string, double> out = config(key, std::map<std::string, double>());
+  for(const auto & entry : out)
+  {
+    if(std::find(joints.begin(), joints.end(), entry.first) == joints.end())
+      mc_rtc::log::error_and_throw("[PolicyConfig:{}] policy.yaml: '{}' has an entry for '{}', which is not a joint of "
+                                   "the controller robot",
+                                   policyName, key, entry.first);
+  }
+  return out;
+}
+
+/**
+ * Resolve one per-joint value from policy.yaml and the ONNX metadata.
+ *
+ * yamlWins: deployment choices (kp, kd) keep the policy.yaml value; training constants (q0, action scale)
+ * keep the metadata value, since the network was trained with it. Differences beyond rounding are collected.
+ */
+bool resolveJointValue(const std::string & joint,
+                       const std::map<std::string, double> & yaml,
+                       const std::map<std::string, double> & metadata,
+                       bool yamlWins,
+                       double & value,
+                       std::vector<std::string> & differences)
+{
+  const auto y = yaml.find(joint);
+  const auto m = metadata.find(joint);
+  if(y != yaml.end() && m != metadata.end())
+  {
+    if(!sameValue(y->second, m->second))
+      differences.push_back(fmt::format("{} (policy.yaml {}, ONNX {})", joint, y->second, m->second));
+    value = yamlWins ? y->second : m->second;
+    return true;
+  }
+  if(y != yaml.end()) value = y->second;
+  else if(m != metadata.end()) value = m->second;
+  return y != yaml.end() || m != metadata.end();
+}
+
+void warnDifferences(const std::string & policyName,
+                     const std::string & field,
+                     const std::string & used,
+                     const std::vector<std::string> & differences)
+{
+  if(differences.empty()) return;
+  std::string list;
+  for(const auto & d : differences) list += "\n  " + d;
+  mc_rtc::log::warning("[PolicyConfig:{}] {} differs from the ONNX metadata, using the {} value for:{}", policyName,
+                       field, used, list);
 }
 
 std::string basenameWithoutExtension(const std::string & path)
@@ -122,9 +188,64 @@ std::vector<std::string> listPolicies(const std::string & root, const std::vecto
 } // namespace
 
 //============================================================================//
+// OnnxMetadata
+//============================================================================//
+OnnxMetadata OnnxMetadata::parse(const std::map<std::string, std::string> & raw, const std::string & policyName)
+{
+  OnnxMetadata out;
+
+  auto find = [&raw](const std::string & key) -> const std::string *
+  {
+    const auto it = raw.find(key);
+    return it == raw.end() ? nullptr : &it->second;
+  };
+
+  if(const std::string * names = find("joint_names")) out.jointNames = splitList(*names);
+  if(const std::string * names = find("observation_names")) out.observationNames = splitList(*names);
+
+  // Per-joint values are stored in joint_names order
+  auto parseJointValues = [&](const std::string & key, std::map<std::string, double> & target)
+  {
+    const std::string * value = find(key);
+    if(!value) return;
+    if(out.jointNames.empty())
+    {
+      mc_rtc::log::warning("[PolicyConfig:{}] ONNX metadata '{}' ignored: no joint_names to attach it to", policyName,
+                           key);
+      return;
+    }
+    const std::vector<std::string> items = splitList(*value);
+    if(items.size() != out.jointNames.size())
+    {
+      mc_rtc::log::warning("[PolicyConfig:{}] ONNX metadata '{}' ignored: {} values for {} joint_names", policyName,
+                           key, items.size(), out.jointNames.size());
+      return;
+    }
+    try
+    {
+      for(size_t i = 0; i < items.size(); ++i) target[out.jointNames[i]] = std::stod(items[i]);
+    }
+    catch(const std::exception &)
+    {
+      target.clear();
+      mc_rtc::log::warning("[PolicyConfig:{}] ONNX metadata '{}' ignored: not a list of numbers", policyName, key);
+    }
+  };
+
+  parseJointValues("joint_stiffness", out.kp);
+  parseJointValues("joint_damping", out.kd);
+  parseJointValues("default_joint_pos", out.q0);
+  parseJointValues("action_scale", out.actionScale);
+
+  return out;
+}
+
+//============================================================================//
 // PolicyConfig
 //============================================================================//
-PolicyConfig PolicyConfig::load(const std::string & policyFolder, std::vector<std::string> mcRtcJoints)
+PolicyConfig PolicyConfig::load(const std::string & policyFolder,
+                                const std::vector<std::string> & mcRtcJoints,
+                                const mc_rtc::Configuration & controllerConfig)
 {
   PolicyConfig out;
 
@@ -135,17 +256,53 @@ PolicyConfig PolicyConfig::load(const std::string & policyFolder, std::vector<st
   out.policyConfiguration.load(out.policyYamlPath);
   out.observationsConfiguration.load(out.observationsYamlPath);
 
-  int joint_size = mcRtcJoints.size();
-
-  out.kp = std::vector<double>(joint_size);
-  out.kd = std::vector<double>(joint_size);
+  const size_t joint_size = mcRtcJoints.size();
 
   out.name = out.policyConfiguration("name", basenameWithoutExtension(policyFolder));
 
   const std::string defaultOnnxName = out.name + ".onnx";
   const std::string onnxFile = out.policyConfiguration("onnx", defaultOnnxName);
   out.onnxPath = joinPath(policyFolder, onnxFile);
+
+  // ONNX metadata: the training data the exporter stored, if any
+  if(out.policyConfiguration("use_onnx_metadata", true))
+  {
+    // An unreadable file only fails when the policy is selected, as before: no metadata here
+    try
+    {
+      out.metadata = OnnxMetadata::parse(RLPolicyInterface::readMetadata(out.onnxPath), out.name);
+    }
+    catch(const std::exception & e)
+    {
+      mc_rtc::log::warning("[PolicyConfig:{}] Could not read the metadata of '{}': {}", out.name, out.onnxPath,
+                           e.what());
+    }
+    for(const auto & joint : out.metadata.jointNames)
+    {
+      if(std::find(mcRtcJoints.begin(), mcRtcJoints.end(), joint) == mcRtcJoints.end())
+        mc_rtc::log::error_and_throw("[PolicyConfig:{}] ONNX metadata joint '{}' is not a joint of the controller "
+                                     "robot: wrong robot or wrong ONNX file",
+                                     out.name, joint);
+    }
+  }
+
+  // Training convention (optional), with the metadata joint order as its "all" group
+  out.convention = ObservationConvention::fromConfig(
+      controllerConfig, out.observationsConfiguration("training_convention", std::string("")));
+  if(!out.metadata.jointNames.empty())
+  {
+    const auto all = out.convention.jointGroups.find("all");
+    if(all != out.convention.jointGroups.end() && all->second != out.metadata.jointNames)
+      mc_rtc::log::error_and_throw("[PolicyConfig:{}] Joint group 'all' of convention '{}' does not match the ONNX "
+                                   "metadata joint order.\n  convention: {}\n  ONNX:       {}\nRemove the group to use "
+                                   "the ONNX order, or set use_onnx_metadata: false in policy.yaml",
+                                   out.name, out.convention.name, all->second, out.metadata.jointNames);
+    out.convention.jointGroups["all"] = out.metadata.jointNames;
+  }
+
   std::map<std::string, double> kp_map, kd_map, defaultPos_map, actionScale_map;
+  double actionScaleAll = 1.0;
+  bool yamlScalarScale = false;
 
   if(out.policyConfiguration.has("control"))
   {
@@ -177,47 +334,108 @@ PolicyConfig PolicyConfig::load(const std::string & policyFolder, std::vector<st
       out.velCmd = vel_cmd;
     }
 
-    kp_map = control("kp", std::map<std::string, double>());
-    kd_map = control("kd", std::map<std::string, double>());
-    if(kp_map.empty() || kd_map.empty())
-      mc_rtc::log::error_and_throw("[PolicyConfig] policy.yaml: control.kp and control.kd are required");
-    // Joints missing from kp/kd (e.g. ref joints not present in the model) get 0 with a warning below
+    kp_map = readJointMap(control, "kp", mcRtcJoints, out.name);
+    kd_map = readJointMap(control, "kd", mcRtcJoints, out.name);
   }
   else
     mc_rtc::log::error_and_throw("[PolicyConfig]: policy.yaml should contain a \"control\" entry");
   if(out.policyConfiguration.has("action"))
   {
     const mc_rtc::Configuration action = out.policyConfiguration("action");
-    action("joints", out.actionJointGroup);
+    out.actionJointGroup = "all";
+    if(action.has("joints"))
+    {
+      try
+      {
+        out.actionJointGroup = action("joints").operator std::string();
+      }
+      catch(mc_rtc::Configuration::Exception & e)
+      {
+        e.silence();
+        mc_rtc::log::error_and_throw("[PolicyConfig:{}] action.joints must be the name of a joint group", out.name);
+      }
+    }
     out.controlledJointGroup = out.actionJointGroup;
     if(action.has("controlled_joints")) action("controlled_joints", out.controlledJointGroup);
 
-    // scale: either a scalar for every joint, or a (partial) per-joint map where unspecified joints use 1.0
-    if(action.has("scale") && action("scale").isNumeric())
-      out.actionScale = std::vector<double>(joint_size, action("scale", 1.0));
-    else
-    {
-      actionScale_map = action("scale", std::map<std::string, double>());
-      out.actionScale = std::vector<double>(joint_size, 1.0);
-    }
-    // q0: optional; when present, indexed in controller order. Missing joints get 0 with a warning.
-    defaultPos_map = action("q0", std::map<std::string, double>());
-    out.defaultPosition = std::vector<double>(defaultPos_map.empty() ? 0 : joint_size, 0.0);
+    actionScale_map = readJointMap(action, "scale", mcRtcJoints, out.name);
+    yamlScalarScale = actionScale_map.empty() && action.has("scale");
+    if(yamlScalarScale) actionScaleAll = action("scale", 1.0);
+    defaultPos_map = readJointMap(action, "q0", mcRtcJoints, out.name);
   }
   else
     mc_rtc::log::error_and_throw("[PolicyConfig]: policy.yaml should contain a \"action\" entry");
 
+  out.kp = std::vector<double>(joint_size);
+  out.kd = std::vector<double>(joint_size);
+  out.actionScale = std::vector<double>(joint_size, actionScaleAll);
+  out.defaultPosition = std::vector<double>(joint_size, std::numeric_limits<double>::quiet_NaN());
+
+  std::vector<std::string> missingKp, missingKd;
+  std::vector<std::string> kpDiff, kdDiff, q0Diff, scaleDiff;
   for(size_t i = 0; i < joint_size; ++i)
   {
     const std::string & joint = mcRtcJoints[i];
 
-    out.kp[i] = find_value(kp_map, joint, "kp", 0.0);
-    out.kd[i] = find_value(kd_map, joint, "kd", 0.0);
+    if(!resolveJointValue(joint, kp_map, out.metadata.kp, true, out.kp[i], kpDiff)) missingKp.push_back(joint);
+    if(!resolveJointValue(joint, kd_map, out.metadata.kd, true, out.kd[i], kdDiff)) missingKd.push_back(joint);
+    resolveJointValue(joint, defaultPos_map, out.metadata.q0, false, out.defaultPosition[i], q0Diff);
+    resolveJointValue(joint, actionScale_map, out.metadata.actionScale, false, out.actionScale[i], scaleDiff);
 
-    // Partial scale maps are allowed: unspecified joints silently keep 1.0
-    if(auto it = actionScale_map.find(joint); it != actionScale_map.end()) out.actionScale[i] = it->second;
-    if(!defaultPos_map.empty()) out.defaultPosition[i] = find_value(defaultPos_map, joint, "q0", 0.0);
+    // A scalar action.scale is a policy.yaml value too: compare it with the metadata
+    const auto m = out.metadata.actionScale.find(joint);
+    if(yamlScalarScale && m != out.metadata.actionScale.end() && !sameValue(actionScaleAll, m->second))
+      scaleDiff.push_back(fmt::format("{} (policy.yaml {}, ONNX {})", joint, actionScaleAll, m->second));
   }
+
+  // Controller joints that are not policy joints (e.g. the linear actuators of parallel mechanisms, present in
+  // refJointOrder but driven through the equivalent serial joints) get kp = kd = 0, as in the previous version.
+  // A missing gain on a policy joint is still an error.
+  const std::vector<std::string> & policyJoints = out.metadata.jointNames;
+  const auto isPolicyJoint = [&policyJoints](const std::string & joint)
+  { return policyJoints.empty() || std::find(policyJoints.begin(), policyJoints.end(), joint) != policyJoints.end(); };
+  std::vector<std::string> zeroGainJoints, missingPolicyKp, missingPolicyKd;
+  for(const auto & joint : missingKp)
+  {
+    if(isPolicyJoint(joint) && !policyJoints.empty()) missingPolicyKp.push_back(joint);
+    else zeroGainJoints.push_back(joint);
+  }
+  for(const auto & joint : missingKd)
+  {
+    if(isPolicyJoint(joint) && !policyJoints.empty()) missingPolicyKd.push_back(joint);
+    else if(std::find(zeroGainJoints.begin(), zeroGainJoints.end(), joint) == zeroGainJoints.end())
+      zeroGainJoints.push_back(joint);
+  }
+
+  if(!missingPolicyKp.empty() || !missingPolicyKd.empty())
+    mc_rtc::log::error_and_throw("[PolicyConfig:{}] No gain in policy.yaml nor in the ONNX metadata for policy "
+                                 "joints:\n  kp: {}\n  kd: {}",
+                                 out.name, missingPolicyKp, missingPolicyKd);
+
+  if(!zeroGainJoints.empty())
+  {
+    for(size_t i = 0; i < joint_size; ++i)
+    {
+      if(std::find(zeroGainJoints.begin(), zeroGainJoints.end(), mcRtcJoints[i]) == zeroGainJoints.end()) continue;
+      if(std::find(missingKp.begin(), missingKp.end(), mcRtcJoints[i]) != missingKp.end()) out.kp[i] = 0.0;
+      if(std::find(missingKd.begin(), missingKd.end(), mcRtcJoints[i]) != missingKd.end()) out.kd[i] = 0.0;
+    }
+    mc_rtc::log::warning("[PolicyConfig:{}] No gain for these controller joints, which are not policy joints; "
+                         "using kp = kd = 0: {}",
+                         out.name, zeroGainJoints);
+  }
+
+  warnDifferences(out.name, "control.kp", "policy.yaml", kpDiff);
+  warnDifferences(out.name, "control.kd", "policy.yaml", kdDiff);
+  warnDifferences(out.name, "action.q0", "ONNX", q0Diff);
+  warnDifferences(out.name, "action.scale", "ONNX", scaleDiff);
+
+  if(!out.metadata.jointNames.empty())
+    mc_rtc::log::info("[PolicyConfig:{}] ONNX metadata: {} joints{}{}{}{}{}", out.name,
+                      out.metadata.jointNames.size(), out.metadata.kp.empty() ? "" : ", kp",
+                      out.metadata.kd.empty() ? "" : ", kd", out.metadata.q0.empty() ? "" : ", q0",
+                      out.metadata.actionScale.empty() ? "" : ", action scale",
+                      out.metadata.observationNames.empty() ? "" : ", observation names");
 
   if(out.controlledJointGroup.empty()) out.controlledJointGroup = out.actionJointGroup;
 
@@ -264,7 +482,7 @@ void PolicyManager::load(const mc_rtc::Configuration & controllerConfig, std::ve
 
   for(size_t i = 0; i < folders.size(); ++i)
   {
-    PolicyConfig policy = PolicyConfig::load(folders[i], mcRtcJoints);
+    PolicyConfig policy = PolicyConfig::load(folders[i], mcRtcJoints, controllerConfig);
 
     if(policies_.find(policy.name) != policies_.end())
     {
