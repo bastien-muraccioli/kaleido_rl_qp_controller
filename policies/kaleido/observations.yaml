@@ -32,8 +32,7 @@ observations:
       joints: all
       relative_to_default_pose: true
       scale: 1.0
-      # Diagnostic: uncomment to feed the policy the QP-integrated joint state instead of the measured one
-      # observation_source: robot
+      observation_source: robot  # QP-integrated joint state (control robot), not the encoders
 
   - type: joint_vel
     name: joint_velocities
@@ -41,7 +40,7 @@ observations:
       joints: all
       relative_to_default_velocity: true
       scale: 1.0
-      # observation_source: robot
+      observation_source: robot  # QP-integrated joint velocity (control robot), not the encoders
 
   - type: last_action
     name: actions  # ONNX observation_names term; also silences the order-check warning

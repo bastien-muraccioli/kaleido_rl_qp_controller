@@ -51,9 +51,11 @@ void JointPosObservation::configure(const ObservationContext & context)
 void JointPosObservation::compute(const ObservationContext & context, Eigen::Ref<Eigen::VectorXd> out) const
 {
   const auto & currentPos = observedRobot(context).encoderValues();
-  const bool useEncoders = currentPos.size() == context.controllerJointOrder.size();
+  // The control robot also carries the measured encoder values: with observation_source: robot, read its
+  // (QP-integrated) mbc state instead, otherwise the policy would still see the measured joints.
+  const bool useEncoders = config_.useRealRobot && currentPos.size() == context.controllerJointOrder.size();
 
-  if(!currentPos.empty() && !useEncoders)
+  if(config_.useRealRobot && !currentPos.empty() && !useEncoders)
   {
     mc_rtc::log::error_and_throw("[Observation:{}] encoderValues has size {}, expected {} or 0", name(),
                                  currentPos.size(), context.controllerJointOrder.size());
@@ -121,9 +123,10 @@ void JointVelObservation::configure(const ObservationContext & context)
 void JointVelObservation::compute(const ObservationContext & context, Eigen::Ref<Eigen::VectorXd> out) const
 {
   const auto & currentVel = observedRobot(context).encoderVelocities();
-  const bool useEncoders = currentVel.size() == context.controllerJointOrder.size();
+  // Same as joint_pos: with observation_source: robot, read the QP-integrated velocity, not the encoders.
+  const bool useEncoders = config_.useRealRobot && currentVel.size() == context.controllerJointOrder.size();
 
-  if(!currentVel.empty() && !useEncoders)
+  if(config_.useRealRobot && !currentVel.empty() && !useEncoders)
   {
     mc_rtc::log::error_and_throw("[Observation:{}] encoderVelocities has size {}, expected {} or 0", name(),
                                  currentVel.size(), context.controllerJointOrder.size());
